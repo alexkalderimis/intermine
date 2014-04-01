@@ -24,6 +24,11 @@ import org.intermine.util.Util;
  * QueryClass. Note: QueryClass = QueryClass makes no sense, but is
  * allowed.
  *
+ * This is used, for example, to constrain that a reference refer to a specific
+ * object (ie. <code>Foo.bar = someObj</code>, rather than explicitly
+ * checking <code>Foo.bar.id = someObj.id</code>). It is also the mechanism
+ * that underlies loop constraints.
+ *
  * @author Richard Smith
  * @author Mark Woodbridge
  * @author Andrew Varley
