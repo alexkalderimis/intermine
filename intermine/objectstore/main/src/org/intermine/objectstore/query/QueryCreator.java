@@ -73,20 +73,24 @@ public final class QueryCreator
 
     /**
      * Create a query that will list the options for a particular
-     * field or class in a query, given the existing constraints
+     * field or class in a query, given the existing constraints.
+     *
      * <p>
-     * For example:
+     * For example, given this query for companies (whose names
+     * start with A) and their departments:
+     * </p>
+     *
      * <pre>
-     * Original query:
      * SELECT c, d
      * FROM Company AS c, Department AS d
      * WHERE c.departments CONTAINS d
      * AND c.name LIKE 'A%'
+     * </pre>
      *
      * We want to know the possible department names are that we might
-     * want to constrain
+     * want to constrain. The following query will be returned:
      *
-     * Returned query:
+     * <pre>
      * SELECT DISTINCT d.name
      * FROM Company AS c, Department AS d
      * WHERE c.departments CONTAINS d
