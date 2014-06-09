@@ -13,6 +13,8 @@ package org.intermine.bio.webservice;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,7 +26,10 @@ import org.intermine.api.profile.Profile;
 import org.intermine.api.query.PathQueryExecutor;
 import org.intermine.api.results.ExportResultsIterator;
 import org.intermine.metadata.ClassDescriptor;
+import org.intermine.objectstore.ObjectStoreException;
+import org.intermine.pathquery.Constraints;
 import org.intermine.pathquery.Path;
+import org.intermine.pathquery.PathConstraint;
 import org.intermine.pathquery.PathException;
 import org.intermine.pathquery.PathQuery;
 import org.intermine.metadata.StringUtil;
@@ -33,6 +38,7 @@ import org.intermine.web.logic.export.ResponseUtil;
 import org.intermine.webservice.server.Format;
 import org.intermine.webservice.server.WebServiceRequestParser;
 import org.intermine.webservice.server.exceptions.BadRequestException;
+import org.intermine.webservice.server.exceptions.ServiceException;
 import org.intermine.webservice.server.output.Output;
 import org.intermine.webservice.server.output.PlainFormatter;
 import org.intermine.webservice.server.output.StreamedOutput;
@@ -132,50 +138,60 @@ public abstract class BioQueryService extends AbstractQueryService
             pq.addViews(newView);
         }
 
+        // Replace the view, if required.
+        Collection<String> views = getPathQueryViews(request.getParameterValues(VIEW_PARAM));
+        if (views != null && !views.isEmpty()) {
+            Collection<String> oldViews = pq.getView();
+            pq.clearView();
+            for (String viewPath: views) {
+                try { // Handle one at a time so we can throw errors at the offending path.
+                    pq.addView(viewPath);
+                } catch (IllegalArgumentException e) {
+                    throw new BadRequestException("Bad view path: " + viewPath);
+                }
+            }
+            // Ensure that we haven't changed the query by changing the view.
+            for (String oldView: oldViews) {
+                try {
+                    ensurePathIsRelevantToQuery(pq, oldView);
+                } catch (PathException e) {
+                    throw new BadRequestException("Illegal path: " + oldView);
+                }
+            }
+        }
+        // Allow sub-classes to check for validity.
+        checkPathQuery(pq);
+
         return pq;
     }
 
     protected abstract Exporter getExporter(PathQuery pq);
 
-    protected void checkPathQuery(PathQuery pq) throws Exception {
+    protected void checkPathQuery(PathQuery pq) throws ServiceException {
         // No-op stub. Put query validation here.
     }
 
     @Override
-    protected void execute() throws Exception {
+    protected void execute() throws ServiceException {
 
+        // Values defined by context.
         Profile profile = getPermission().getProfile();
         PathQueryExecutor executor = this.im.getPathQueryExecutor(profile);
-        // For FASTA/BED/GFF only set Gene.id in the view in im-tables system
-        PathQuery pathQuery = getQuery();
-        checkPathQuery(pathQuery);
 
-        // Bring back original views for extra fields to be included in data export
-        // NB: Functional but bad practice?
-        // view in http request will look like: view=Gene.name&view=Gene.length...
-        // Support the standard mechanism for accepting multiple parameter values
-        List<String> views = getPathQueryViews(request.getParameterValues(VIEW_PARAM));
-        if (views != null) {
-            try {
-                pathQuery.addViews(views);
-            } catch (IllegalArgumentException e) {
-                throw new BadRequestException("Bad value for view parameter", e);
-            }
-            // Remove duplicates in views
-            ArrayList<String> al = new ArrayList<String>();
-            al.clear();
-            al.addAll(new LinkedHashSet<String>(pathQuery.getView()));
-            pathQuery.clearView();
-            pathQuery.addViews(al);
-        }
+        // Values defined by parameters.
+        PathQuery pathQuery = getQuery();
+        int start = getIntParameter("start", 0);
+        int size = getIntParameter("size", WebServiceRequestParser.DEFAULT_MAX_COUNT);
 
         Exporter exporter = getExporter(pathQuery);
 
         ExportResultsIterator iter = null;
         try {
-            iter = executor.execute(pathQuery, 0, WebServiceRequestParser.DEFAULT_MAX_COUNT);
+            iter = executor.execute(pathQuery, start, size);
             iter.goFaster();
             exporter.export(iter);
+        } catch (ObjectStoreException e) {
+            throw new ServiceException("Error running query.", e);
         } finally {
             if (iter != null) {
                 iter.releaseGoFaster();
@@ -183,23 +199,46 @@ public abstract class BioQueryService extends AbstractQueryService
         }
     }
 
+    private void ensurePathIsRelevantToQuery(PathQuery pathQuery, String pathString) throws PathException {
+        Path path = pathQuery.makePath(pathString);
+        Path parent = path.getPrefix();
+        for (String viewPathString: pathQuery.getView()) {
+            Path viewPath = pathQuery.makePath(viewPathString);
+            Path viewNode = viewPath.getPrefix();
+            if (parent.equals(viewNode)) {
+                return; // Already relevant.
+            }
+        }
+        // Not in the view. Check the constraints.
+        for (PathConstraint con: pathQuery.getConstraints().keySet()) {
+            Path node = pathQuery.makePath(con.getPath());
+            if (node.equals(parent)) {
+                return; // Already relevant.
+            }
+        }
+        // Not in view, nor in constraints. Add it back as a NOT NULL constraint.
+        pathQuery.addConstraint(Constraints.isNotNull(pathString));
+    }
+
     /**
-     * Parse path query views from request parameter "view" comma-separated
+     * Parse path query views from the "view" request parameter.
      *
-     * @param pathQuery
-     * @return a list of query view as string
+     * Returns the empty set if no input is provided.
+     *
+     * @param The viewpaths given as request parameters.
+     * @return a list of paths as strings. Never null.
      */
-    protected static List<String> getPathQueryViews(String[] views) {
+    protected static Collection<String> getPathQueryViews(String[] views) {
         if (views == null || views.length < 1) {
-            return null;
+            return Collections.emptySet();
         }
 
-        List<String> viewList = new ArrayList<String>();
+        Collection<String> cleaned = new LinkedHashSet<String>();
         for (String view : views) {
-            viewList.add(view.trim());
+            cleaned.add(view.trim());
         }
 
-        return viewList;
+        return cleaned;
     }
 
     /**

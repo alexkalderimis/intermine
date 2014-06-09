@@ -21,6 +21,7 @@ import org.intermine.bio.web.logic.SequenceFeatureExportUtil;
 import org.intermine.bio.web.logic.SequenceFeatureExportUtil.InvalidQueryException;
 import org.intermine.pathquery.PathQuery;
 import org.intermine.webservice.server.exceptions.BadRequestException;
+import org.intermine.webservice.server.exceptions.ServiceException;
 
 /**
  * A service for exporting query results in UCSC BED format.
@@ -72,7 +73,7 @@ public class BEDQueryService extends BioQueryService
     }
 
     @Override
-    protected void checkPathQuery(PathQuery pq) throws Exception {
+    protected void checkPathQuery(PathQuery pq) throws ServiceException {
         try {
             SequenceFeatureExportUtil.isValidSequenceFeatureQuery(pq);
         } catch (InvalidQueryException e) {

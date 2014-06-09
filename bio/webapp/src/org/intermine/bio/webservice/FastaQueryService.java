@@ -7,9 +7,11 @@ import org.intermine.bio.web.export.SequenceExporter;
 import org.intermine.metadata.ClassDescriptor;
 import org.intermine.objectstore.ObjectStore;
 import org.intermine.pathquery.Path;
+import org.intermine.pathquery.PathException;
 import org.intermine.pathquery.PathQuery;
 import org.intermine.web.logic.export.Exporter;
 import org.intermine.webservice.server.exceptions.BadRequestException;
+import org.intermine.webservice.server.exceptions.ServiceException;
 
 /**
  * A service for exporting query results as fasta.
@@ -104,11 +106,16 @@ public class FastaQueryService extends BioQueryService
 
 
     @Override
-    protected void checkPathQuery(PathQuery pq) throws Exception {
+    protected void checkPathQuery(PathQuery pq) throws ServiceException {
         if (pq.getView().size() > 1) {
             throw new BadRequestException("Queries to this service may only have one view.");
         }
-        Path path = pq.makePath(pq.getView().get(0));
+        Path path;
+        try {
+            path = pq.makePath(pq.getView().get(0));
+        } catch (PathException e) {
+            throw new BadRequestException("Query contains an illegal path: "  + pq.getView().get(0));
+        }
         ClassDescriptor klazz = path.getLastClassDescriptor();
         ClassDescriptor sf = im.getModel().getClassDescriptorByName("SequenceFeature");
         ClassDescriptor protein = im.getModel().getClassDescriptorByName("Protein");
