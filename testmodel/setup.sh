@@ -36,6 +36,7 @@ if test -z $TOMCAT_PWD; then
     TOMCAT_PWD=manager
 fi
 
+
 cd $HOME
 
 if test ! -d $IMDIR; then
@@ -58,7 +59,7 @@ if test ! -f $PROP_FILE; then
     sed -i "s/USER/$USER/g" $PROP_FILE
 fi
 
-echo Checking databases.
+echo "------> Checking databases..."
 for db in $USERPROFILEDB $PRODDB; do
     if psql --list | egrep -q '\s'$db'\s'; then
         echo $db exists.
@@ -68,20 +69,23 @@ for db in $USERPROFILEDB $PRODDB; do
     fi
 done
 
+echo "------> Removing current webapp"
+cd $DIR/webapp/main
+ant -Drelease=demo -Ddont.minify=true remove-webapp >> $DIR/setup.log
+
 cd $DIR/dbmodel
 
-echo Loading demo data set...
+echo "------> Loading demo data set..."
 ant -Drelease=demo loadsadata >> $LOG
 
 cd $DIR/webapp/main
 
-echo Building and releasing web-app...
+echo "------> Building and releasing web-app..."
 ant -Drelease=demo -Ddont.minify=true \
     build-test-userprofile-withuser \
     create-quicksearch-index \
     default \
-    remove-webapp \
-    release-webapp >> $LOG
+    release-webapp | tee -a $LOG | grep tomcat-deploy
 
-echo All done. Build log is available in $LOG
+echo "------> All done. Build log is available in $LOG"
 
